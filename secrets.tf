@@ -22,7 +22,7 @@ resource "aws_secretsmanager_secret" "users_config" {
   count = var.create_resources ? 1 : 0
 
   name        = "${var.name}-pgdog-users"
-  description = "PgDog users configuration (users.toml with secret placeholders)"
+  description = "PgDog users configuration (users.toml)"
 
   tags = var.tags
 }

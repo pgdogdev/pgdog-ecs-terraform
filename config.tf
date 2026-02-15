@@ -50,7 +50,8 @@ EOT
 [[sharded_schemas]]
 database = "${schema.database}"
 ${schema.name != null ? "name = \"${schema.name}\"" : ""}
-shard = ${schema.shard}
+${schema.shard != null ? "shard = ${schema.shard}" : ""}
+${schema.all == true ? "all = true" : ""}
 EOT
   ])
 
@@ -62,7 +63,7 @@ database = "${mapping.database}"
 column = "${mapping.column}"
 kind = "${mapping.kind}"
 shard = ${mapping.shard}
-${mapping.values != null ? "values = [${join(", ", [for v in mapping.values : "\"${v}\""])}]" : ""}
+${mapping.values != null ? "values = [${join(", ", [for v in mapping.values : can(tonumber(v)) ? v : "\"${v}\""])}]" : ""}
 ${mapping.start != null ? "start = ${mapping.start}" : ""}
 ${mapping.end != null ? "end = ${mapping.end}" : ""}
 EOT
@@ -94,7 +95,8 @@ EOT
     try(local.pgdog_tcp.keepalive, null) != null,
     try(local.pgdog_tcp.time, null) != null,
     try(local.pgdog_tcp.interval, null) != null,
-    try(local.pgdog_tcp.retries, null) != null
+    try(local.pgdog_tcp.retries, null) != null,
+    try(local.pgdog_tcp.user_timeout, null) != null
   ])
 
   tcp_toml = local.has_tcp_settings ? join("\n", compact([
@@ -103,6 +105,7 @@ EOT
     try(local.pgdog_tcp.time, null) != null ? "time = ${local.pgdog_tcp.time}" : "",
     try(local.pgdog_tcp.interval, null) != null ? "interval = ${local.pgdog_tcp.interval}" : "",
     try(local.pgdog_tcp.retries, null) != null ? "retries = ${local.pgdog_tcp.retries}" : "",
+    try(local.pgdog_tcp.user_timeout, null) != null ? "user_timeout = ${local.pgdog_tcp.user_timeout}" : "",
   ])) : ""
 
   # Generate [memory] section
@@ -120,7 +123,18 @@ EOT
   ])) : ""
 
   # Generate [admin] section
-  admin_toml = try(local.pgdog_admin.password, null) != null ? "[admin]\npassword = \"${local.pgdog_admin.password}\"" : ""
+  has_admin_settings = local.pgdog_admin != null && anytrue([
+    try(local.pgdog_admin.name, null) != null,
+    try(local.pgdog_admin.user, null) != null,
+    try(local.pgdog_admin.password, null) != null
+  ])
+
+  admin_toml = local.has_admin_settings ? join("\n", compact([
+    "[admin]",
+    try(local.pgdog_admin.name, null) != null ? "name = \"${local.pgdog_admin.name}\"" : "",
+    try(local.pgdog_admin.user, null) != null ? "user = \"${local.pgdog_admin.user}\"" : "",
+    try(local.pgdog_admin.password, null) != null ? "password = \"${local.pgdog_admin.password}\"" : "",
+  ])) : ""
 
   # Generate [query_stats] section
   query_stats_toml = try(local.pgdog_query_stats.enabled, false) ? join("\n", [
@@ -150,48 +164,69 @@ EOT
   tls_verify                = try(local.pgdog_tls.verify, "prefer")
   tls_server_ca_certificate = try(local.pgdog_tls.server_ca_certificate, null)
 
-  # Generate pgdog.toml content
+  # Shorthand
+  g = local.pgdog_general
+
+  # Generate pgdog.toml content - output all settings explicitly
   pgdog_toml = join("\n", compact([
     "[general]",
-    "port                      = ${local.pgdog_general.port}",
-    "workers                   = ${local.pgdog_general.workers}",
-    "default_pool_size         = ${local.pgdog_general.default_pool_size}",
-    "min_pool_size             = ${local.pgdog_general.min_pool_size}",
-    "pooler_mode               = \"${local.pgdog_general.pooler_mode}\"",
-    local.pgdog_general.healthcheck_port != null ? "healthcheck_port          = ${local.pgdog_general.healthcheck_port}" : "",
-    "healthcheck_interval      = ${local.pgdog_general.healthcheck_interval}",
-    "idle_healthcheck_interval = ${local.pgdog_general.idle_healthcheck_interval}",
-    "idle_healthcheck_delay    = ${local.pgdog_general.idle_healthcheck_delay}",
-    "healthcheck_timeout       = ${local.pgdog_general.healthcheck_timeout}",
-    local.pgdog_general.ban_timeout != null ? "ban_timeout               = ${local.pgdog_general.ban_timeout}" : "",
-    "rollback_timeout          = ${local.pgdog_general.rollback_timeout}",
-    "load_balancing_strategy   = \"${local.pgdog_general.load_balancing_strategy}\"",
-    "read_write_strategy       = \"${local.pgdog_general.read_write_strategy}\"",
-    local.pgdog_general.read_write_split != null ? "read_write_split          = \"${local.pgdog_general.read_write_split}\"" : "",
-    local.tls_certificate != null ? "tls_certificate           = \"${local.tls_certificate}\"" : "",
-    local.tls_private_key != null ? "tls_private_key           = \"${local.tls_private_key}\"" : "",
-    "tls_client_required       = ${local.tls_client_required}",
-    "tls_verify                = \"${local.tls_verify}\"",
+    "port = ${local.g.port}",
+    local.g.healthcheck_port != null ? "healthcheck_port = ${local.g.healthcheck_port}" : "",
+    local.g.openmetrics_port != null ? "openmetrics_port = ${local.g.openmetrics_port}" : "",
+    local.g.openmetrics_namespace != null ? "openmetrics_namespace = \"${local.g.openmetrics_namespace}\"" : "",
+    "workers = ${local.g.workers}",
+    "default_pool_size = ${local.g.default_pool_size}",
+    "min_pool_size = ${local.g.min_pool_size}",
+    "pooler_mode = \"${local.g.pooler_mode}\"",
+    "load_balancing_strategy = \"${local.g.load_balancing_strategy}\"",
+    "read_write_split = \"${local.g.read_write_split}\"",
+    "healthcheck_interval = ${local.g.healthcheck_interval}",
+    "idle_healthcheck_interval = ${local.g.idle_healthcheck_interval}",
+    "idle_healthcheck_delay = ${local.g.idle_healthcheck_delay}",
+    "connection_recovery = \"${local.g.connection_recovery}\"",
+    "client_connection_recovery = \"${local.g.client_connection_recovery}\"",
+    "rollback_timeout = ${local.g.rollback_timeout}",
+    "ban_timeout = ${local.g.ban_timeout}",
+    "shutdown_timeout = ${local.g.shutdown_timeout}",
+    local.g.shutdown_termination_timeout != null ? "shutdown_termination_timeout = ${local.g.shutdown_termination_timeout}" : "",
+    local.g.query_timeout != null ? "query_timeout = ${local.g.query_timeout}" : "",
+    "connect_timeout = ${local.g.connect_timeout}",
+    "connect_attempts = ${local.g.connect_attempts}",
+    "connect_attempt_delay = ${local.g.connect_attempt_delay}",
+    "checkout_timeout = ${local.g.checkout_timeout}",
+    "idle_timeout = ${local.g.idle_timeout}",
+    local.g.client_idle_timeout != null ? "client_idle_timeout = ${local.g.client_idle_timeout}" : "",
+    "client_login_timeout = ${local.g.client_login_timeout}",
+    "server_lifetime = ${local.g.server_lifetime}",
+    local.tls_certificate != null ? "tls_certificate = \"${local.tls_certificate}\"" : "",
+    local.tls_private_key != null ? "tls_private_key = \"${local.tls_private_key}\"" : "",
+    "tls_client_required = ${local.tls_client_required}",
+    "tls_verify = \"${local.tls_verify}\"",
     local.tls_server_ca_certificate != null ? "tls_server_ca_certificate = \"${local.tls_server_ca_certificate}\"" : "",
-    "shutdown_timeout          = ${local.pgdog_general.shutdown_timeout}",
-    "prepared_statements       = \"${local.pgdog_general.prepared_statements}\"",
-    "query_parser              = \"${local.pgdog_general.query_parser}\"",
-    "passthrough_auth          = \"${local.pgdog_general.passthrough_auth}\"",
-    "connect_timeout           = ${local.pgdog_general.connect_timeout}",
-    "checkout_timeout          = ${local.pgdog_general.checkout_timeout}",
-    local.pgdog_general.query_timeout != null ? "query_timeout             = ${local.pgdog_general.query_timeout}" : "",
-    local.pgdog_general.idle_timeout != null ? "idle_timeout              = ${local.pgdog_general.idle_timeout}" : "",
-    local.pgdog_general.client_idle_timeout != null ? "client_idle_timeout       = ${local.pgdog_general.client_idle_timeout}" : "",
-    "dry_run                   = ${local.pgdog_general.dry_run}",
-    "mirror_queue              = ${local.pgdog_general.mirror_queue}",
-    "mirror_exposure           = ${local.pgdog_general.mirror_exposure}",
-    "auth_type                 = \"${local.pgdog_general.auth_type}\"",
-    "cross_shard_disabled      = ${local.pgdog_general.cross_shard_disabled}",
-    "openmetrics_port          = ${local.pgdog_general.metrics_port}",
-    "openmetrics_namespace     = \"${local.pgdog_general.openmetrics_namespace}\"",
-    "server_lifetime           = ${local.pgdog_general.server_lifetime}",
-    "log_connections           = ${local.pgdog_general.log_connections}",
-    "log_disconnections        = ${local.pgdog_general.log_disconnections}",
+    "auth_type = \"${local.g.auth_type}\"",
+    "passthrough_auth = \"${local.g.passthrough_auth}\"",
+    "prepared_statements = \"${local.g.prepared_statements}\"",
+    local.g.prepared_statements_limit != null ? "prepared_statements_limit = ${local.g.prepared_statements_limit}" : "",
+    "query_parser = \"${local.g.query_parser}\"",
+    "query_cache_limit = ${local.g.query_cache_limit}",
+    "cross_shard_disabled = ${local.g.cross_shard_disabled}",
+    "system_catalogs = \"${local.g.system_catalogs}\"",
+    "omnisharded_sticky = ${local.g.omnisharded_sticky}",
+    "mirror_queue = ${local.g.mirror_queue}",
+    "mirror_exposure = ${local.g.mirror_exposure}",
+    "dry_run = ${local.g.dry_run}",
+    "two_phase_commit = ${local.g.two_phase_commit}",
+    "two_phase_commit_auto = ${local.g.two_phase_commit_auto}",
+    local.g.pub_sub_channel_size != null ? "pub_sub_channel_size = ${local.g.pub_sub_channel_size}" : "",
+    "resharding_copy_format = \"${local.g.resharding_copy_format}\"",
+    local.g.reload_schema_on_ddl != null ? "reload_schema_on_ddl = ${local.g.reload_schema_on_ddl}" : "",
+    "log_connections = ${local.g.log_connections}",
+    "log_disconnections = ${local.g.log_disconnections}",
+    "stats_period = ${local.g.stats_period}",
+    local.g.dns_ttl != null ? "dns_ttl = ${local.g.dns_ttl}" : "",
+    local.g.lsn_check_delay != null || local.has_aurora ? "lsn_check_delay = ${coalesce(local.g.lsn_check_delay, 0)}" : "",
+    local.g.lsn_check_interval != null || local.has_aurora ? "lsn_check_interval = ${coalesce(local.g.lsn_check_interval, 1000)}" : "",
+    local.g.lsn_check_timeout != null ? "lsn_check_timeout = ${local.g.lsn_check_timeout}" : "",
     "",
     local.databases_toml,
     local.mirrors_toml,
@@ -206,20 +241,101 @@ EOT
     local.rewrite_toml,
   ]))
 
-  # Generate users.toml content with secret ARN placeholders
-  # Init container will replace {{SECRET:arn}} with actual values
+  # Generate users.toml content with actual passwords from Secrets Manager
   users_toml = join("\n", [
     for user in var.users : join("\n", compact([
       "[[users]]",
       "name = \"${user.name}\"",
       "database = \"${user.database}\"",
-      "password = \"{{SECRET:${user.password_secret_arn}}}\"",
+      "password = \"${data.aws_secretsmanager_secret_version.user_passwords[user.name].secret_string}\"",
       user.pool_size != null ? "pool_size = ${user.pool_size}" : "",
       user.pooler_mode != null ? "pooler_mode = \"${user.pooler_mode}\"" : "",
       user.read_only == true ? "read_only = true" : "",
       user.server_user != null ? "server_user = \"${user.server_user}\"" : "",
-      user.server_password_secret_arn != null ? "server_password = \"{{SECRET:${user.server_password_secret_arn}}}\"" : "",
+      user.server_password_secret_arn != null ? "server_password = \"${data.aws_secretsmanager_secret_version.server_passwords[user.name].secret_string}\"" : "",
       "",
     ]))
   ])
+
+  # For validation output, mask passwords
+  users_toml_masked = join("\n", [
+    for user in var.users : join("\n", compact([
+      "[[users]]",
+      "name = \"${user.name}\"",
+      "database = \"${user.database}\"",
+      "password = \"REDACTED\"",
+      user.pool_size != null ? "pool_size = ${user.pool_size}" : "",
+      user.pooler_mode != null ? "pooler_mode = \"${user.pooler_mode}\"" : "",
+      user.read_only == true ? "read_only = true" : "",
+      user.server_user != null ? "server_user = \"${user.server_user}\"" : "",
+      user.server_password_secret_arn != null ? "server_password = \"REDACTED\"" : "",
+      "",
+    ]))
+  ])
+}
+
+# Fetch user passwords from Secrets Manager
+data "aws_secretsmanager_secret_version" "user_passwords" {
+  for_each  = var.create_resources ? { for user in var.users : user.name => user.password_secret_arn } : {}
+  secret_id = each.value
+}
+
+# Fetch server passwords from Secrets Manager (if specified)
+data "aws_secretsmanager_secret_version" "server_passwords" {
+  for_each  = var.create_resources ? { for user in var.users : user.name => user.server_password_secret_arn if user.server_password_secret_arn != null } : {}
+  secret_id = each.value
+}
+
+# ------------------------------------------------------------------------------
+# OTEL Collector Configuration (for CloudWatch metrics export)
+# ------------------------------------------------------------------------------
+
+locals {
+  # Use configured port or default 9090 for metrics
+  metrics_port = coalesce(local.pgdog_general.openmetrics_port, 9090)
+
+  otel_config = yamlencode({
+    receivers = {
+      prometheus = {
+        config = {
+          scrape_configs = [
+            {
+              job_name         = "pgdog"
+              scrape_interval  = "${var.metrics_collection_interval}s"
+              static_configs   = [{ targets = ["localhost:${local.metrics_port}"] }]
+              metrics_path     = "/metrics"
+              honor_labels     = true
+              honor_timestamps = true
+            }
+          ]
+        }
+      }
+    }
+    processors = {
+      batch = {
+        timeout = "60s"
+      }
+    }
+    exporters = {
+      awsemf = {
+        namespace               = var.cloudwatch_metrics_namespace
+        region                  = data.aws_region.current.id
+        log_group_name          = "/aws/ecs/${var.name}-pgdog/metrics"
+        log_stream_name         = "otel-metrics"
+        dimension_rollup_option = "NoDimensionRollup"
+        resource_to_telemetry_conversion = {
+          enabled = true
+        }
+      }
+    }
+    service = {
+      pipelines = {
+        metrics = {
+          receivers  = ["prometheus"]
+          processors = ["batch"]
+          exporters  = ["awsemf"]
+        }
+      }
+    }
+  })
 }

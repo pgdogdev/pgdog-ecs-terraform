@@ -8,8 +8,8 @@ output "pgdog_toml" {
 }
 
 output "users_toml" {
-  description = "Generated users.toml content (secrets replaced with PLACEHOLDER) for validation"
-  value       = replace(local.users_toml, "/\\{\\{SECRET:[^}]+\\}\\}/", "PLACEHOLDER")
+  description = "Generated users.toml content (passwords redacted) for validation"
+  value       = var.create_resources ? local.users_toml_masked : ""
 }
 
 output "configured_databases" {

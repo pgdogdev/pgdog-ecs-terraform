@@ -29,8 +29,14 @@ variable "vpc_id" {
 }
 
 variable "subnet_ids" {
-  description = "Subnet IDs for ECS tasks (should be private subnets)"
+  description = "Subnet IDs for ECS tasks"
   type        = list(string)
+}
+
+variable "assign_public_ip" {
+  description = "Assign public IP to ECS tasks (required if using public subnets without NAT Gateway)"
+  type        = bool
+  default     = false
 }
 
 variable "security_group_ids" {
@@ -119,42 +125,93 @@ variable "pgdog" {
     # Container image (not part of pgdog.toml)
     image = optional(string, "ghcr.io/pgdogdev/pgdog:0.1.29")
 
-    # [general] section
+    # [general] section - defaults match PgDog defaults from docs
     general = optional(object({
-      port                      = optional(number, 6432)
-      metrics_port              = optional(number, 9090)
-      healthcheck_port          = optional(number)
-      workers                   = optional(number, 4)
-      default_pool_size         = optional(number, 10)
-      min_pool_size             = optional(number, 1)
-      pooler_mode               = optional(string, "transaction")
-      load_balancing_strategy   = optional(string, "round_robin")
-      read_write_strategy       = optional(string, "conservative")
-      read_write_split          = optional(string)
+      # Network
+      port             = optional(number, 6432)
+      healthcheck_port = optional(number)
+      openmetrics_port = optional(number, 9090)
+
+      # Workers and pooling
+      workers           = optional(number, 2)
+      default_pool_size = optional(number, 10)
+      min_pool_size     = optional(number, 1)
+      pooler_mode       = optional(string, "transaction")
+
+      # Load balancing
+      load_balancing_strategy = optional(string, "random")
+      read_write_split        = optional(string, "include_primary")
+
+      # Health checks
       healthcheck_interval      = optional(number, 30000)
       idle_healthcheck_interval = optional(number, 30000)
       idle_healthcheck_delay    = optional(number, 5000)
-      healthcheck_timeout       = optional(number, 5000)
-      ban_timeout               = optional(number)
-      connect_timeout           = optional(number, 5000)
-      checkout_timeout          = optional(number, 5000)
-      query_timeout             = optional(number)
-      idle_timeout              = optional(number)
-      client_idle_timeout       = optional(number)
-      rollback_timeout          = optional(number, 5000)
-      shutdown_timeout          = optional(number, 60000)
-      server_lifetime           = optional(number, 86400000)
-      auth_type                 = optional(string, "scram")
-      passthrough_auth          = optional(string, "disabled")
+
+      # Connection recovery
+      connection_recovery        = optional(string, "recover")
+      client_connection_recovery = optional(string, "recover")
+
+      # Timeouts
+      rollback_timeout             = optional(number, 5000)
+      ban_timeout                  = optional(number, 300000)
+      shutdown_timeout             = optional(number, 60000)
+      shutdown_termination_timeout = optional(number)
+      query_timeout                = optional(number)
+      connect_timeout              = optional(number, 300)
+      connect_attempts             = optional(number, 1)
+      connect_attempt_delay        = optional(number, 0)
+      checkout_timeout             = optional(number, 300)
+      idle_timeout                 = optional(number, 60000)
+      client_idle_timeout          = optional(number)
+      client_login_timeout         = optional(number, 60000)
+      server_lifetime              = optional(number, 86400000)
+
+      # Authentication
+      auth_type        = optional(string, "scram")
+      passthrough_auth = optional(string, "disabled")
+
+      # Prepared statements
       prepared_statements       = optional(string, "extended")
-      query_parser              = optional(string, "auto")
-      log_connections           = optional(bool, true)
-      log_disconnections        = optional(bool, true)
-      openmetrics_namespace     = optional(string, "pgdog_")
-      mirror_queue              = optional(number, 128)
-      mirror_exposure           = optional(number, 1.0)
-      dry_run                   = optional(bool, false)
-      cross_shard_disabled      = optional(bool, false)
+      prepared_statements_limit = optional(number)
+
+      # Query handling
+      query_parser      = optional(string, "auto")
+      query_cache_limit = optional(number, 50000)
+
+      # Sharding
+      cross_shard_disabled = optional(bool, false)
+      system_catalogs      = optional(string, "omnisharded_sticky")
+      omnisharded_sticky   = optional(bool, false)
+
+      # Mirroring
+      mirror_queue    = optional(number, 128)
+      mirror_exposure = optional(number, 1.0)
+      dry_run         = optional(bool, false)
+
+      # Two-phase commit
+      two_phase_commit      = optional(bool, false)
+      two_phase_commit_auto = optional(bool, true)
+
+      # Pub/Sub
+      pub_sub_channel_size = optional(number)
+
+      # Schema
+      resharding_copy_format = optional(string, "binary")
+      reload_schema_on_ddl   = optional(bool)
+
+      # Logging and metrics
+      log_connections       = optional(bool, true)
+      log_disconnections    = optional(bool, true)
+      openmetrics_namespace = optional(string)
+      stats_period          = optional(number, 15000)
+
+      # DNS
+      dns_ttl = optional(number)
+
+      # LSN checking (for Aurora auto role detection)
+      lsn_check_delay    = optional(number)
+      lsn_check_interval = optional(number, 5000)
+      lsn_check_timeout  = optional(number, 5000)
     }), {})
 
     # [tls] settings (part of [general] in pgdog.toml)
@@ -168,10 +225,11 @@ variable "pgdog" {
 
     # [tcp] section
     tcp = optional(object({
-      keepalive = optional(bool)
-      time      = optional(number)
-      interval  = optional(number)
-      retries   = optional(number)
+      keepalive    = optional(bool)
+      time         = optional(number)
+      interval     = optional(number)
+      retries      = optional(number)
+      user_timeout = optional(number)
     }))
 
     # [memory] section
@@ -183,6 +241,8 @@ variable "pgdog" {
 
     # [admin] section
     admin = optional(object({
+      name     = optional(string)
+      user     = optional(string)
       password = optional(string)
     }))
 
@@ -217,7 +277,8 @@ variable "pgdog" {
     sharded_schemas = optional(list(object({
       database = string
       name     = optional(string)
-      shard    = number
+      shard    = optional(number)
+      all      = optional(bool)
     })), [])
 
     # [[sharded_mappings]] section
@@ -314,6 +375,16 @@ variable "scale_out_cooldown" {
   default     = 60
 }
 
+variable "capacity_provider_strategy" {
+  description = "Capacity provider strategy for the ECS service. If not specified, uses FARGATE launch type."
+  type = list(object({
+    capacity_provider = string
+    weight            = number
+    base              = optional(number, 0)
+  }))
+  default = null
+}
+
 # ------------------------------------------------------------------------------
 # Logging
 # ------------------------------------------------------------------------------
@@ -338,4 +409,26 @@ variable "deregistration_delay" {
   description = "Seconds to wait before deregistering a target from the NLB"
   type        = number
   default     = 30
+}
+
+# ------------------------------------------------------------------------------
+# CloudWatch Metrics Export
+# ------------------------------------------------------------------------------
+
+variable "export_metrics_to_cloudwatch" {
+  description = "Export PgDog Prometheus metrics to CloudWatch using ADOT sidecar"
+  type        = bool
+  default     = false
+}
+
+variable "cloudwatch_metrics_namespace" {
+  description = "CloudWatch metrics namespace for PgDog metrics"
+  type        = string
+  default     = "PgDog"
+}
+
+variable "metrics_collection_interval" {
+  description = "How often to scrape metrics (in seconds)"
+  type        = number
+  default     = 60
 }
