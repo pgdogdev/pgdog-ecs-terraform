@@ -16,8 +16,7 @@ Deploys [PgDog](https://pgdog.dev) on AWS ECS. Both Fargate and EC2 clusters are
 
 ## Quick start
 
-Add this module to your Terraform workspace. If you have an existing RDS Postgres or Aurora database, the module can import it automatically and add it to the `[[databases]]` section
-in `pgdog.toml`, for example:
+Add this module to your Terraform workspace. If you have an existing RDS Postgres or Aurora database, the module can import it automatically and add it to the `[[databases]]` section in `pgdog.toml`, for example:
 
 ```hcl
 module "pgdog" {
@@ -48,6 +47,16 @@ module "pgdog" {
   # Networking configuration.
   vpc_id     = "vpc-xxxxxxxxxx"
   subnet_ids = ["subnet-xxxxxxxxxx", "subnet-yyyyyyyyyyy"]
+
+  pgdog = {
+    # PgDog version.
+    image_tag = "v0.1.29"
+    
+    # Configure any pgdog.toml settings directly in TF.
+    general = {
+      workers = 2
+    }
+  }
 }
 ```
 
@@ -59,7 +68,7 @@ resource "aws_secretsmanager_secret" "postgres_user_password" {
 }
 
 resource "aws_secretsmanager_secret_version" "postgres_user_password" {
-  secret_id     = aws_secretsmanager_secret.app_password.id
+  secret_id     = aws_secretsmanager_secret.postgres_user_password.id
 
   # Store the password in Vault or another secrets manager, e.g. 1Password.
   secret_string = "${data.vault_kv_secret_v2.db.data["password"]}"
@@ -184,7 +193,8 @@ users = [
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | `pgdog` | PgDog configuration - mirrors pgdog.toml structure | `object` | `{}` | no |
-| `pgdog.image` | Container image | `string` | `ghcr.io/pgdogdev/pgdog:0.1.29` | no |
+| `pgdog.image_repository` | Container image repository | `string` | `ghcr.io/pgdogdev/pgdog` | no |
+| `pgdog.image_tag` | Container image tag | `string` | `0.1.29` | no |
 | `pgdog.general` | [General settings](https://docs.pgdog.dev/configuration/pgdog.toml/general/) | `object` | `{}` | no |
 | `pgdog.tls` | TLS settings | `object` | `null` | no |
 | `pgdog.tcp` | [TCP settings](https://docs.pgdog.dev/configuration/pgdog.toml/network/) | `object` | `null` | no |
@@ -192,6 +202,7 @@ users = [
 | `pgdog.admin` | [Admin settings](https://docs.pgdog.dev/configuration/pgdog.toml/admin/) | `object` | `null` | no |
 | `pgdog.query_stats` | Query stats settings | `object` | `null` | no |
 | `pgdog.rewrite` | [Rewrite settings](https://docs.pgdog.dev/configuration/pgdog.toml/rewrite/) | `object` | `null` | no |
+| `pgdog.control` | Control plane settings (endpoint, token, intervals) | `object` | `null` | no |
 | `pgdog.sharded_tables` | [Sharded tables](https://docs.pgdog.dev/configuration/pgdog.toml/sharded_tables/) | `list(object)` | `[]` | no |
 | `pgdog.sharded_schemas` | [Sharded schemas](https://docs.pgdog.dev/configuration/pgdog.toml/sharded_schemas/) | `list(object)` | `[]` | no |
 | `pgdog.sharded_mappings` | Sharded mappings | `list(object)` | `[]` | no |

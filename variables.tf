@@ -123,7 +123,8 @@ variable "pgdog" {
   description = "PgDog configuration - mirrors pgdog.toml structure"
   type = object({
     # Container image (not part of pgdog.toml)
-    image = optional(string, "ghcr.io/pgdogdev/pgdog:0.1.29")
+    image_repository = optional(string, "ghcr.io/pgdogdev/pgdog")
+    image_tag        = optional(string, "0.1.29")
 
     # [general] section - defaults match PgDog defaults from docs
     general = optional(object({
@@ -255,6 +256,19 @@ variable "pgdog" {
       query_plan_max_age   = optional(number, 15000)
       max_errors           = optional(number, 100)
       max_error_age        = optional(number, 300000)
+    }))
+
+    # [control] section
+    control = optional(object({
+      endpoint                 = string
+      token                    = string
+      metrics_interval         = optional(number, 1000)
+      stats_interval           = optional(number, 5000)
+      active_queries_interval  = optional(number, 5000)
+      errors_interval          = optional(number, 5000)
+      request_timeout          = optional(number, 1000)
+      query_timings_chunk_size = optional(number, 25)
+      config_refresh_interval  = optional(number, 60000)
     }))
 
     # [rewrite] section

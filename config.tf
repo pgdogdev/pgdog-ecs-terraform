@@ -4,13 +4,14 @@
 
 locals {
   # Shorthand references - defaults are already set in variable definition via optional()
-  pgdog_image   = var.pgdog.image
+  pgdog_image   = "${var.pgdog.image_repository}:${var.pgdog.image_tag}"
   pgdog_general = var.pgdog.general
 
   pgdog_tls              = var.pgdog.tls
   pgdog_tcp              = var.pgdog.tcp
   pgdog_memory           = var.pgdog.memory
   pgdog_admin            = var.pgdog.admin
+  pgdog_control          = var.pgdog.control
   pgdog_query_stats      = var.pgdog.query_stats
   pgdog_rewrite          = var.pgdog.rewrite
   pgdog_sharded_tables   = coalesce(var.pgdog.sharded_tables, [])
@@ -157,6 +158,20 @@ EOT
     "primary_key = \"${try(local.pgdog_rewrite.primary_key, "ignore")}\"",
   ]) : ""
 
+  # Generate [control] section
+  control_toml = local.pgdog_control != null ? join("\n", [
+    "[control]",
+    "endpoint = \"${local.pgdog_control.endpoint}\"",
+    "token = \"${local.pgdog_control.token}\"",
+    "metrics_interval = ${local.pgdog_control.metrics_interval}",
+    "stats_interval = ${local.pgdog_control.stats_interval}",
+    "active_queries_interval = ${local.pgdog_control.active_queries_interval}",
+    "errors_interval = ${local.pgdog_control.errors_interval}",
+    "request_timeout = ${local.pgdog_control.request_timeout}",
+    "query_timings_chunk_size = ${local.pgdog_control.query_timings_chunk_size}",
+    "config_refresh_interval = ${local.pgdog_control.config_refresh_interval}",
+  ]) : ""
+
   # TLS settings - use file paths when tls_mode is enabled, otherwise use pgdog.tls config
   tls_enabled               = var.tls_mode != "disabled"
   tls_certificate           = local.tls_enabled ? "/etc/pgdog/server.crt" : try(local.pgdog_tls.certificate, null)
@@ -240,6 +255,7 @@ EOT
     local.admin_toml,
     local.query_stats_toml,
     local.rewrite_toml,
+    local.control_toml,
   ]))
 
   # Generate users.toml content with actual passwords from Secrets Manager
