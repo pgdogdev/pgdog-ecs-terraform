@@ -4,11 +4,15 @@ Deploys [PgDog](https://pgdog.dev) on AWS ECS. Both Fargate and EC2 clusters are
 
 ## Features
 
-- :heavy_check_mark: ECS service with load balancer and CPU autoscaling
-- :heavy_check_mark: Secure configuration storage in Secrets Manager
-- :heavy_check_mark: PgDog logs and metrics export to CloudWatch
-- :heavy_check_mark: Automatic RDS instance detection, including Aurora readers & writer
-- :heavy_check_mark: Guaranteed QoS with preconfigured CPU and memory requirements
+:heavy_check_mark: ECS service with load balancer and CPU autoscaling
+
+:heavy_check_mark: Secure configuration storage in Secrets Manager
+
+:heavy_check_mark: PgDog logs and metrics export to CloudWatch
+
+:heavy_check_mark: Automatic RDS instance detection, including Aurora readers & writer
+
+:heavy_check_mark: Guaranteed QoS with preconfigured CPU and memory requirements
 
 ## Quick start
 
