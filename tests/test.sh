@@ -25,7 +25,7 @@ for values_file in "$TEST_DIR"/values-*.tfvars; do
   # Validate with pgdog if available
   if command -v pgdog &> /dev/null; then
     echo "    Validating with pgdog checkconfig..."
-    pgdog checkconfig "$TEST_DIR/output/$name/pgdog.toml" "$TEST_DIR/output/$name/users.toml"
+    pgdog --config "$TEST_DIR/output/$name/pgdog.toml" --users "$TEST_DIR/output/$name/users.toml" checkconfig
   else
     echo "    Generated pgdog.toml and users.toml (pgdog not found, skipping validation)"
   fi
