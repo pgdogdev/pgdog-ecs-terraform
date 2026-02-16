@@ -15,7 +15,7 @@ for values_file in "$TEST_DIR"/values-*.tfvars; do
   terraform -chdir="$TEST_DIR" validate > /dev/null
 
   # Generate configs
-  terraform -chdir="$TEST_DIR" apply -auto-approve -var-file="$values_file" > /dev/null 2>&1
+  terraform -chdir="$TEST_DIR" apply -auto-approve -var-file="$values_file" > /dev/null
 
   # Output files for inspection
   mkdir -p "$TEST_DIR/output/$name"

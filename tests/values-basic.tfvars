@@ -14,10 +14,3 @@ databases = [
     role = "replica"
   }
 ]
-
-users = [
-  {
-    name     = "app"
-    database = "postgres"
-  }
-]

@@ -74,7 +74,7 @@ EOF
   ] : []
 
   # ADOT sidecar container definition (for CloudWatch metrics export)
-  adot_container = var.export_metrics_to_cloudwatch ? [{
+  adot_container = var.create_resources && var.export_metrics_to_cloudwatch ? [{
     name      = "adot-collector"
     image     = "public.ecr.aws/aws-observability/aws-otel-collector:latest"
     essential = false
