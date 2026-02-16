@@ -31,6 +31,48 @@ locals {
   # Task compatibility - support both if using EC2 capacity providers
   task_compatibilities = local.uses_ec2 ? ["EC2", "FARGATE"] : ["FARGATE"]
 
+  # TLS certificate handling scripts
+  tls_script_self_signed = <<-EOF
+
+# Generate self-signed TLS certificate
+echo "$(date -Iseconds) Generating self-signed TLS certificate..."
+openssl req -x509 -newkey rsa:2048 -keyout /config/server.key -out /config/server.crt \
+  -days ${var.tls_self_signed_validity_days} -nodes \
+  -subj "/CN=${var.tls_self_signed_common_name}" 2>/dev/null
+chmod 600 /config/server.key
+echo "$(date -Iseconds) TLS certificate generated"
+EOF
+
+  tls_script_secrets_manager = <<-EOF
+
+# Fetch TLS certificate and key from Secrets Manager
+echo "$(date -Iseconds) Fetching TLS certificate..."
+sign_request "$TLS_CERTIFICATE_SECRET_ARN" > /config/server.crt
+
+echo "$(date -Iseconds) Fetching TLS private key..."
+sign_request "$TLS_PRIVATE_KEY_SECRET_ARN" > /config/server.key
+chmod 600 /config/server.key
+echo "$(date -Iseconds) TLS credentials fetched"
+EOF
+
+  tls_script = (
+    var.tls_mode == "self_signed" ? local.tls_script_self_signed :
+    var.tls_mode == "secrets_manager" ? local.tls_script_secrets_manager :
+    ""
+  )
+
+  # TLS environment variables for init container
+  tls_env_vars = var.tls_mode == "secrets_manager" ? [
+    {
+      name  = "TLS_CERTIFICATE_SECRET_ARN"
+      value = var.tls_certificate_secret_arn
+    },
+    {
+      name  = "TLS_PRIVATE_KEY_SECRET_ARN"
+      value = var.tls_private_key_secret_arn
+    }
+  ] : []
+
   # ADOT sidecar container definition (for CloudWatch metrics export)
   adot_container = var.export_metrics_to_cloudwatch ? [{
     name      = "adot-collector"
@@ -90,12 +132,12 @@ resource "aws_ecs_task_definition" "pgdog" {
         entryPoint = ["/bin/sh", "-c"]
 
         command = [<<EOF
-set -e
+set -eo pipefail
 apk add --no-cache curl jq openssl > /dev/null 2>&1
 
 mkdir -p /config
 
-# SigV4 signing function
+# SigV4 signing function - returns secret value or exits with error
 sign_request() {
   local secret_arn="$1"
   local region="$AWS_REGION"
@@ -106,10 +148,19 @@ sign_request() {
   local amz_date=$(date -u +%Y%m%dT%H%M%SZ)
 
   # Get credentials from ECS metadata
-  local creds=$(curl -s "http://169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")
+  local creds
+  creds=$(curl -sf "http://169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") || {
+    echo "ERROR: Failed to fetch ECS credentials" >&2
+    return 1
+  }
   local access_key=$(echo "$creds" | jq -r '.AccessKeyId')
   local secret_key=$(echo "$creds" | jq -r '.SecretAccessKey')
   local token=$(echo "$creds" | jq -r '.Token')
+
+  if [ -z "$access_key" ] || [ "$access_key" = "null" ]; then
+    echo "ERROR: Failed to parse credentials" >&2
+    return 1
+  fi
 
   # Request body
   local body="{\"SecretId\":\"$secret_arn\"}"
@@ -136,14 +187,35 @@ sign_request() {
   # Authorization header
   local auth_header="$algorithm Credential=$access_key/$scope, SignedHeaders=$signed_headers, Signature=$signature"
 
-  # Make request
-  curl -s "$endpoint" \
+  # Make request and parse response
+  local response
+  response=$(curl -sf "$endpoint" \
     -H "Content-Type: application/x-amz-json-1.1" \
     -H "X-Amz-Date: $amz_date" \
     -H "X-Amz-Security-Token: $token" \
     -H "X-Amz-Target: secretsmanager.GetSecretValue" \
     -H "Authorization: $auth_header" \
-    -d "$body" | jq -r '.SecretString'
+    -d "$body") || {
+    echo "ERROR: Secrets Manager request failed for $secret_arn" >&2
+    return 1
+  }
+
+  # Check for API error
+  local error_type=$(echo "$response" | jq -r '.__type // empty')
+  if [ -n "$error_type" ]; then
+    local error_msg=$(echo "$response" | jq -r '.Message // .message // "Unknown error"')
+    echo "ERROR: $error_type - $error_msg" >&2
+    return 1
+  fi
+
+  # Extract secret value
+  local secret_value=$(echo "$response" | jq -r '.SecretString // empty')
+  if [ -z "$secret_value" ]; then
+    echo "ERROR: Empty secret value for $secret_arn" >&2
+    return 1
+  fi
+
+  echo "$secret_value"
 }
 
 echo "$(date -Iseconds) Starting config fetch..."
@@ -153,13 +225,12 @@ sign_request "$PGDOG_CONFIG_SECRET_ARN" > /config/pgdog.toml
 
 echo "$(date -Iseconds) Fetching users.toml..."
 sign_request "$USERS_CONFIG_SECRET_ARN" > /config/users.toml
-
+${local.tls_script}
 echo "$(date -Iseconds) Done!"
-ls -la /config/
 EOF
         ]
 
-        environment = [
+        environment = concat([
           {
             name  = "PGDOG_CONFIG_SECRET_ARN"
             value = aws_secretsmanager_secret.pgdog_config[0].arn
@@ -168,7 +239,7 @@ EOF
             name  = "USERS_CONFIG_SECRET_ARN"
             value = aws_secretsmanager_secret.users_config[0].arn
           }
-        ]
+        ], local.tls_env_vars)
 
         mountPoints = [
           {
@@ -236,6 +307,13 @@ EOF
             sourceVolume  = "config"
             containerPath = "/etc/pgdog"
             readOnly      = true
+          }
+        ]
+
+        environment = [
+          {
+            name  = "CONFIG_HASH"
+            value = local.config_hash
           }
         ]
 

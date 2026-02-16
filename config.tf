@@ -157,9 +157,10 @@ EOT
     "primary_key = \"${try(local.pgdog_rewrite.primary_key, "ignore")}\"",
   ]) : ""
 
-  # TLS settings
-  tls_certificate           = try(local.pgdog_tls.certificate, null)
-  tls_private_key           = try(local.pgdog_tls.private_key, null)
+  # TLS settings - use file paths when tls_mode is enabled, otherwise use pgdog.tls config
+  tls_enabled               = var.tls_mode != "disabled"
+  tls_certificate           = local.tls_enabled ? "/etc/pgdog/server.crt" : try(local.pgdog_tls.certificate, null)
+  tls_private_key           = local.tls_enabled ? "/etc/pgdog/server.key" : try(local.pgdog_tls.private_key, null)
   tls_client_required       = try(local.pgdog_tls.client_required, false)
   tls_verify                = try(local.pgdog_tls.verify, "prefer")
   tls_server_ca_certificate = try(local.pgdog_tls.server_ca_certificate, null)
@@ -256,6 +257,9 @@ EOT
       "",
     ]))
   ])
+
+  # Config hash for triggering rolling deployments when config changes
+  config_hash = sha256("${local.pgdog_toml}${local.users_toml}")
 
   # For validation output, mask passwords
   users_toml_masked = join("\n", [

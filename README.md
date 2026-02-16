@@ -1,5 +1,21 @@
 # PgDog ECS Terraform Module
 
+Deploys [PgDog](https://pgdog.dev) PostgreSQL connection pooler, load balancer and database sharder on AWS ECS. Both Fargate and EC2 clusters are supported. Fargate is used by default.
+
+## Resources
+
+| Resource | Description |
+|----------|-------------|
+| ECS Cluster | Optional, only if `ecs_cluster_arn` not provided |
+| ECS Task Definition | With init container and optional ADOT sidecar |
+| ECS Service | With deployment circuit breaker |
+| Network Load Balancer | With target group and listener |
+| Security Group | For ECS tasks |
+| IAM Roles | Task execution and task runtime roles |
+| Secrets Manager Secrets | pgdog.toml and users.toml configs |
+| CloudWatch Log Group | Container logs |
+| App Autoscaling | Target and policies (CPU/memory-based) |
+
 ## Variables
 
 ### General
@@ -120,7 +136,7 @@ pgdog = {
 }
 ```
 
-### ECS Configuration
+### ECS configuration
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
@@ -160,7 +176,7 @@ capacity_provider_strategy = [
 log_retention_days = 7
 ```
 
-### Health Check
+### ECS health check
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
@@ -172,7 +188,7 @@ health_check_grace_period = 120
 deregistration_delay      = 60
 ```
 
-### CloudWatch Metrics Export
+### CloudWatch metrics export
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
@@ -184,4 +200,24 @@ deregistration_delay      = 60
 export_metrics_to_cloudwatch = true
 cloudwatch_metrics_namespace = "MyApp/PgDog"
 metrics_collection_interval  = 30
+```
+
+### TLS configuration
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| `tls_mode` | TLS mode: disabled, self_signed, or secrets_manager | `string` | `disabled` | no |
+| `tls_certificate_secret_arn` | ARN of secret containing TLS certificate (when tls_mode = secrets_manager) | `string` | `null` | no |
+| `tls_private_key_secret_arn` | ARN of secret containing TLS private key (when tls_mode = secrets_manager) | `string` | `null` | no |
+| `tls_self_signed_common_name` | Common name for self-signed certificate | `string` | `pgdog` | no |
+| `tls_self_signed_validity_days` | Validity period for self-signed certificate | `number` | `365` | no |
+
+```hcl
+# Self-signed certificate (generated on boot)
+tls_mode = "self_signed"
+
+# Certificate from Secrets Manager
+tls_mode                   = "secrets_manager"
+tls_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789:secret:pgdog-cert"
+tls_private_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789:secret:pgdog-key"
 ```

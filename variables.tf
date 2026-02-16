@@ -432,3 +432,42 @@ variable "metrics_collection_interval" {
   type        = number
   default     = 60
 }
+
+# ------------------------------------------------------------------------------
+# TLS Configuration
+# ------------------------------------------------------------------------------
+
+variable "tls_mode" {
+  description = "TLS mode: disabled, self_signed (generate on boot), or secrets_manager (provide cert/key)"
+  type        = string
+  default     = "disabled"
+
+  validation {
+    condition     = contains(["disabled", "self_signed", "secrets_manager"], var.tls_mode)
+    error_message = "tls_mode must be one of: disabled, self_signed, secrets_manager"
+  }
+}
+
+variable "tls_certificate_secret_arn" {
+  description = "ARN of Secrets Manager secret containing TLS certificate (required when tls_mode = secrets_manager)"
+  type        = string
+  default     = null
+}
+
+variable "tls_private_key_secret_arn" {
+  description = "ARN of Secrets Manager secret containing TLS private key (required when tls_mode = secrets_manager)"
+  type        = string
+  default     = null
+}
+
+variable "tls_self_signed_common_name" {
+  description = "Common name for self-signed certificate (default: pgdog)"
+  type        = string
+  default     = "pgdog"
+}
+
+variable "tls_self_signed_validity_days" {
+  description = "Validity period in days for self-signed certificate"
+  type        = number
+  default     = 365
+}
