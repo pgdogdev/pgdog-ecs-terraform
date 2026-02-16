@@ -20,7 +20,7 @@ Add this module to your Terraform workspace. If you have an existing RDS Postgre
 
 ```hcl
 module "pgdog" {
-  source = "github.com/pgdogdev/pgdog-ecs-terraform"
+  source = "github.com/pgdogdev/pgdog-ecs-terraform?ref=v0.1.0"
 
   # The module will automatically detect all instances
   # and add them to pgdog.toml.
@@ -110,7 +110,7 @@ Failure to do either will produce confusing errors at task creation, since it wo
 
 ```hcl
 module "pgdog" {
-  source = "github.com/pgdogdev/pgdog-ecs-terraform"
+  source = "github.com/pgdogdev/pgdog-ecs-terraform?ref=v0.1.0"
   name   = "myapp"
   tags   = { Environment = "prod" }
 }

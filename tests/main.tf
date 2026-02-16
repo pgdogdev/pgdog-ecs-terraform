@@ -2,6 +2,15 @@
 # Test Module - Uses the main module with mock data (no AWS required)
 # ------------------------------------------------------------------------------
 
+provider "aws" {
+  region                      = "us-east-1"
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_requesting_account_id  = true
+  access_key                  = "test"
+  secret_key                  = "test"
+}
+
 variable "test_name" {
   description = "Name of the test configuration"
   type        = string
