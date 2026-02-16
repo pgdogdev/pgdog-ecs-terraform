@@ -1,0 +1,69 @@
+name: Test Terraform module
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout pgdog
+        uses: actions/checkout@v4
+        with:
+          repository: pgdogdev/pgdog
+          path: pgdog-source
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            pgdog-source/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('pgdog-source/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install CMake 3.31
+        run: |
+          sudo apt update && sudo apt install mold -y
+          sudo apt remove cmake
+          sudo pip3 install cmake==3.31.6
+
+      - name: Build pgdog
+        run: cargo build --bin pgdog
+        working-directory: pgdog-source
+
+      - name: Add pgdog to PATH
+        run: echo "${{ github.workspace }}/pgdog-source/target/debug" >> $GITHUB_PATH
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive
+
+      - name: Validate module
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Run tests
+        run: ./tests/test.sh

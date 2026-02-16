@@ -1,6 +1,29 @@
 # PgDog ECS Terraform Module
 
-Deploys [PgDog](https://pgdog.dev) PostgreSQL connection pooler, load balancer and database sharder on AWS ECS. Both Fargate and EC2 clusters are supported. Fargate is used by default.
+Deploys [PgDog](https://pgdog.dev) on AWS ECS. Both Fargate and EC2 clusters are supported, with Fargate used by default.
+
+## Quick start
+
+Use this module as part of your Terraform workspace. To create a simple PgDog deployment with AWS Aurora, you can do the following:
+
+```hcl
+module "pgdog" {
+  source = "github.com/pgdogdev/pgdog-ecs-terraform"
+  
+  # The module will automatically detect all instances
+  # and add them to pgdog.toml.
+  aurora_clusters = [
+    {
+      cluster_identifier = "aurora-cluster-name"
+      database_name      = "postgres"
+    }
+  ]
+  
+  # You have a ECS cluster already?
+  ecs_cluster_arn = "arn:aws:ecs:us-west-2:1234567890:cluster/your-fargate-ecs-cluster"
+}
+```
+
 
 ## Resources
 
