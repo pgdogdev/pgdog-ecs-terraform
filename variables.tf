@@ -418,7 +418,7 @@ variable "deregistration_delay" {
 variable "export_metrics_to_cloudwatch" {
   description = "Export PgDog Prometheus metrics to CloudWatch using ADOT sidecar"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "cloudwatch_metrics_namespace" {
@@ -430,7 +430,7 @@ variable "cloudwatch_metrics_namespace" {
 variable "metrics_collection_interval" {
   description = "How often to scrape metrics (in seconds)"
   type        = number
-  default     = 60
+  default     = 30
 }
 
 # ------------------------------------------------------------------------------

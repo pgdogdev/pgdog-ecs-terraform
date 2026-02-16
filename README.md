@@ -2,14 +2,23 @@
 
 Deploys [PgDog](https://pgdog.dev) on AWS ECS. Both Fargate and EC2 clusters are supported, with Fargate used by default.
 
+## Features
+
+- :heavy_check_mark: ECS service with load balancer and CPU autoscaling
+- :heavy_check_mark: Secure configuration storage in Secrets Manager
+- :heavy_check_mark: PgDog logs and metrics export to CloudWatch
+- :heavy_check_mark: Automatic RDS instance detection, including Aurora readers & writer
+- :heavy_check_mark: Guaranteed QoS with preconfigured CPU and memory requirements
+
 ## Quick start
 
-Use this module as part of your Terraform workspace. To create a simple PgDog deployment with AWS Aurora, you can do the following:
+Add this module to your Terraform workspace. If you have an existing RDS Postgres or Aurora database, the module can import it automatically and add it to the `[[databases]]` section
+in `pgdog.toml`, for example:
 
 ```hcl
 module "pgdog" {
   source = "github.com/pgdogdev/pgdog-ecs-terraform"
-  
+
   # The module will automatically detect all instances
   # and add them to pgdog.toml.
   aurora_clusters = [
@@ -18,26 +27,63 @@ module "pgdog" {
       database_name      = "postgres"
     }
   ]
-  
+
+  # Users need to be configured manually.
+  users = [
+    {
+      name                = "postgres"
+      database            = "postgres" # Must match database_name above.
+      # Password is securely stored in AWS Secrets Manager.
+      password_secret_arn = aws_secretsmanager_secret.postgres_user_password.arn
+    }
+  ]
+
   # You have a ECS cluster already?
   ecs_cluster_arn = "arn:aws:ecs:us-west-2:1234567890:cluster/your-fargate-ecs-cluster"
+
+  # Networking configuration.
+  vpc_id     = "vpc-xxxxxxxxxx"
+  subnet_ids = ["subnet-xxxxxxxxxx", "subnet-yyyyyyyyyyy"]
 }
 ```
 
+The password for each user needs to be stored in Secrets Manager. You can do so manually or by using Terraform:
 
-## Resources
+```hcl
+resource "aws_secretsmanager_secret" "postgres_user_password" {
+  name = "your-pgdog-deployment/postgres-password"
+}
+
+resource "aws_secretsmanager_secret_version" "postgres_user_password" {
+  secret_id     = aws_secretsmanager_secret.app_password.id
+
+  # Store the password in Vault or another secrets manager, e.g. 1Password.
+  secret_string = "${data.vault_kv_secret_v2.db.data["password"]}"
+}
+```
+
+## Dependencies
+
+Tasks created by the ECS service require access to the Internet to download container images and push metrics and logs to CloudWatch. To make this work out of the box, you have two options:
+
+1. Use **private** `subnet_ids` which have an attached **NAT gateway**
+2. Use **public** `subnet_ids` and assign ECS tasks **public IPs** by configuring `assign_public_ip = true`
+
+Failure to do either will produce confusing errors at task creation, since it won't be able to log errors to CloudWatch or pull container images.
+
+## Managed resources
 
 | Resource | Description |
 |----------|-------------|
-| ECS Cluster | Optional, only if `ecs_cluster_arn` not provided |
-| ECS Task Definition | With init container and optional ADOT sidecar |
-| ECS Service | With deployment circuit breaker |
-| Network Load Balancer | With target group and listener |
-| Security Group | For ECS tasks |
-| IAM Roles | Task execution and task runtime roles |
-| Secrets Manager Secrets | pgdog.toml and users.toml configs |
-| CloudWatch Log Group | Container logs |
-| App Autoscaling | Target and policies (CPU/memory-based) |
+| ECS Cluster | Optional, only if `ecs_cluster_arn` not provided. |
+| ECS task definition | PgDog container, init container to setup configuration, and optional ADOT sidecar to export Prometheus metrics to CloudWatch. |
+| ECS service | Supports deployment circuit breaker and rolling deployments. |
+| Network load balancer | Your application will connect to the load balancer. |
+| Security group | For controlling ingress to ECS tasks. |
+| IAM Roles | Automatically configured task execution and task runtime roles. |
+| Secrets Manager Secrets | Storing `pgdog.toml` and `users.toml` configuration files. |
+| CloudWatch Log Group | PgDog container logs. |
+| Autoscaling | Target and policies (CPU/memory-based). |
 
 ## Variables
 
@@ -213,7 +259,7 @@ deregistration_delay      = 60
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `export_metrics_to_cloudwatch` | Export PgDog Prometheus metrics to CloudWatch using ADOT sidecar | `bool` | `false` | no |
+| `export_metrics_to_cloudwatch` | Export PgDog Prometheus metrics to CloudWatch using ADOT sidecar | `bool` | `true` | no |
 | `cloudwatch_metrics_namespace` | CloudWatch metrics namespace for PgDog metrics | `string` | `PgDog` | no |
 | `metrics_collection_interval` | How often to scrape metrics (in seconds) | `number` | `60` | no |
 
