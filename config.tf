@@ -298,7 +298,7 @@ locals {
   # Use configured port or default 9090 for metrics
   metrics_port = coalesce(local.pgdog_general.openmetrics_port, 9090)
 
-  otel_config = yamlencode({
+  otel_config = var.create_resources && var.export_metrics_to_cloudwatch ? yamlencode({
     receivers = {
       prometheus = {
         config = {
@@ -323,7 +323,7 @@ locals {
     exporters = {
       awsemf = {
         namespace               = var.cloudwatch_metrics_namespace
-        region                  = data.aws_region.current.id
+        region                  = data.aws_region.current[0].id
         log_group_name          = "/aws/ecs/${var.name}-pgdog/metrics"
         log_stream_name         = "otel-metrics"
         dimension_rollup_option = "NoDimensionRollup"
@@ -341,5 +341,5 @@ locals {
         }
       }
     }
-  })
+  }) : ""
 }

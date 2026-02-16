@@ -100,7 +100,7 @@ EOF
       options = {
         "awslogs-group"         = aws_cloudwatch_log_group.pgdog[0].name
         "awslogs-create-group"  = "true"
-        "awslogs-region"        = data.aws_region.current.id
+        "awslogs-region"        = data.aws_region.current[0].id
         "awslogs-stream-prefix" = "adot"
       }
     }
@@ -254,7 +254,7 @@ EOF
           options = {
             "awslogs-group"         = aws_cloudwatch_log_group.pgdog[0].name
             "awslogs-create-group"  = "true"
-            "awslogs-region"        = data.aws_region.current.id
+            "awslogs-region"        = data.aws_region.current[0].id
             "awslogs-stream-prefix" = "init"
           }
         }
@@ -333,7 +333,7 @@ EOF
           options = {
             "awslogs-group"         = aws_cloudwatch_log_group.pgdog[0].name
             "awslogs-create-group"  = "true"
-            "awslogs-region"        = data.aws_region.current.id
+            "awslogs-region"        = data.aws_region.current[0].id
             "awslogs-stream-prefix" = "pgdog"
           }
         }

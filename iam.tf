@@ -2,8 +2,13 @@
 # Data Sources
 # ------------------------------------------------------------------------------
 
-data "aws_region" "current" {}
-data "aws_caller_identity" "current" {}
+data "aws_region" "current" {
+  count = var.create_resources ? 1 : 0
+}
+
+data "aws_caller_identity" "current" {
+  count = var.create_resources ? 1 : 0
+}
 
 # ------------------------------------------------------------------------------
 # ECS Task Execution Role
@@ -135,8 +140,8 @@ resource "aws_iam_role_policy" "task_cloudwatch_metrics" {
           "logs:DescribeLogStreams"
         ]
         Resource = [
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/ecs/${var.name}-pgdog/metrics",
-          "arn:aws:logs:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:log-group:/aws/ecs/${var.name}-pgdog/metrics:*"
+          "arn:aws:logs:${data.aws_region.current[0].id}:${data.aws_caller_identity.current[0].account_id}:log-group:/aws/ecs/${var.name}-pgdog/metrics",
+          "arn:aws:logs:${data.aws_region.current[0].id}:${data.aws_caller_identity.current[0].account_id}:log-group:/aws/ecs/${var.name}-pgdog/metrics:*"
         ]
       },
       {
