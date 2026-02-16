@@ -89,7 +89,6 @@ aurora_clusters = [
 | `users[].server_password_secret_arn` | ARN of secret for backend database password (if different) | `string` | `null` | no |
 | `users[].pool_size` | Connection pool size for this user | `number` | `10` | no |
 | `users[].pooler_mode` | Pooler mode (transaction/session/statement) | `string` | `transaction` | no |
-| `users[].read_only` | Route this user to read replicas only | `bool` | `false` | no |
 
 ```hcl
 users = [
@@ -100,10 +99,9 @@ users = [
     pool_size           = 20
   },
   {
-    name                = "readonly"
+    name                = "migrations"
     database            = "mydb"
-    password_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789:secret:ro-password"
-    read_only           = true
+    password_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789:secret:migrations-password"
   }
 ]
 ```

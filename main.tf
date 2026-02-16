@@ -25,7 +25,7 @@ locals {
 
   # Determine if using EC2 capacity providers (not FARGATE or FARGATE_SPOT)
   uses_ec2 = var.capacity_provider_strategy != null && anytrue([
-    for cp in var.capacity_provider_strategy : !contains(["FARGATE", "FARGATE_SPOT"], cp.capacity_provider)
+    for cp in coalesce(var.capacity_provider_strategy, []) : !contains(["FARGATE", "FARGATE_SPOT"], cp.capacity_provider)
   ])
 
   # Task compatibility - support both if using EC2 capacity providers
