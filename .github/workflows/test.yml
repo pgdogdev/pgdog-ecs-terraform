@@ -53,6 +53,10 @@ jobs:
       - name: Build pgdog
         run: cargo build --bin pgdog
         working-directory: pgdog-source
+        env:
+          # crates.io downloads occasionally drop mid-transfer (curl error 56);
+          # cargo's default of 3 retries isn't always enough.
+          CARGO_NET_RETRY: 10
 
       - name: Add pgdog to PATH
         run: echo "${{ github.workspace }}/pgdog-source/target/debug" >> $GITHUB_PATH
