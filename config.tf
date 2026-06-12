@@ -178,7 +178,7 @@ EOT
   tls_private_key           = local.tls_enabled ? "/etc/pgdog/server.key" : try(local.pgdog_tls.private_key, null)
   tls_client_required       = try(local.pgdog_tls.client_required, false)
   tls_verify                = try(local.pgdog_tls.verify, "prefer")
-  tls_server_ca_certificate = try(local.pgdog_tls.server_ca_certificate, null)
+  tls_server_ca_certificate = var.tls_server_ca_certificate_inline != null ? "/etc/pgdog/server_ca.crt" : try(local.pgdog_tls.server_ca_certificate, null)
 
   # Shorthand
   g = local.pgdog_general

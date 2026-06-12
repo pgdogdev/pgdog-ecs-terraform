@@ -61,6 +61,25 @@ EOF
     ""
   )
 
+  # Backend (e.g. RDS) CA certificate for tls_verify = verify_ca / verify_full. Provided
+  # independently of tls_mode, since it secures the PgDog -> backend direction.
+  ca_cert_script_body = <<-EOF
+
+# Write backend server CA certificate (provided inline)
+echo "$(date -Iseconds) Writing server CA certificate..."
+printf '%s' "$TLS_SERVER_CA_CERTIFICATE" > /config/server_ca.crt
+echo "$(date -Iseconds) Server CA certificate written"
+EOF
+
+  ca_cert_script = var.tls_server_ca_certificate_inline != null ? local.ca_cert_script_body : ""
+
+  ca_cert_env_vars = var.tls_server_ca_certificate_inline != null ? [
+    {
+      name  = "TLS_SERVER_CA_CERTIFICATE"
+      value = var.tls_server_ca_certificate_inline
+    }
+  ] : []
+
   # TLS environment variables for init container
   tls_env_vars = var.tls_mode == "secrets_manager" ? [
     {
@@ -225,7 +244,7 @@ sign_request "$PGDOG_CONFIG_SECRET_ARN" > /config/pgdog.toml
 
 echo "$(date -Iseconds) Fetching users.toml..."
 sign_request "$USERS_CONFIG_SECRET_ARN" > /config/users.toml
-${local.tls_script}
+${local.tls_script}${local.ca_cert_script}
 echo "$(date -Iseconds) Done!"
 EOF
         ]
@@ -239,7 +258,7 @@ EOF
             name  = "USERS_CONFIG_SECRET_ARN"
             value = aws_secretsmanager_secret.users_config[0].arn
           }
-        ], local.tls_env_vars)
+        ], local.tls_env_vars, local.ca_cert_env_vars)
 
         mountPoints = [
           {

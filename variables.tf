@@ -474,6 +474,12 @@ variable "tls_private_key_secret_arn" {
   default     = null
 }
 
+variable "tls_server_ca_certificate_inline" {
+  description = "Inline PEM contents of the backend (e.g. RDS) server CA certificate."
+  type        = string
+  default     = null
+}
+
 variable "tls_self_signed_common_name" {
   description = "Common name for self-signed certificate (default: pgdog)"
   type        = string
