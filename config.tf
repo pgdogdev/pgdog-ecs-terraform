@@ -258,8 +258,10 @@ EOT
     local.control_toml,
   ]))
 
-  # Generate users.toml content with actual passwords from Secrets Manager
-  users_toml = join("\n", [
+  # Generate users.toml content with actual passwords from Secrets Manager.
+  # When no users are configured (e.g. passthrough_auth), emit a comment instead
+  # of an empty string: Secrets Manager rejects an empty secret_string.
+  users_toml = length(var.users) == 0 ? "# No users configured" : join("\n", [
     for user in var.users : join("\n", compact([
       "[[users]]",
       "name = \"${user.name}\"",
@@ -278,7 +280,7 @@ EOT
   config_hash = sha256("${local.pgdog_toml}${local.users_toml}")
 
   # For validation output, mask passwords
-  users_toml_masked = join("\n", [
+  users_toml_masked = length(var.users) == 0 ? "# No users configured" : join("\n", [
     for user in var.users : join("\n", compact([
       "[[users]]",
       "name = \"${user.name}\"",
