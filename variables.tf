@@ -201,8 +201,12 @@ variable "pgdog" {
       reload_schema_on_ddl   = optional(bool)
 
       # Logging and metrics
+      log_level             = optional(string, "info")
+      log_format            = optional(string, "json")
       log_connections       = optional(bool, true)
       log_disconnections    = optional(bool, true)
+      log_dedup_window      = optional(number, 0)
+      log_dedup_threshold   = optional(number, 0)
       openmetrics_namespace = optional(string)
       stats_period          = optional(number, 15000)
 
