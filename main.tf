@@ -45,14 +45,14 @@ EOF
 
   tls_script_secrets_manager = <<-EOF
 
-# Fetch TLS certificate and key from Secrets Manager
-echo "$(date -Iseconds) Fetching TLS certificate..."
-sign_request "$TLS_CERTIFICATE_SECRET_ARN" > /config/server.crt
+# Write TLS certificate and key (injected from Secrets Manager by ECS)
+echo "$(date -Iseconds) Writing TLS certificate..."
+printf '%s' "$TLS_CERTIFICATE" > /config/server.crt
 
-echo "$(date -Iseconds) Fetching TLS private key..."
-sign_request "$TLS_PRIVATE_KEY_SECRET_ARN" > /config/server.key
+echo "$(date -Iseconds) Writing TLS private key..."
+printf '%s' "$TLS_PRIVATE_KEY" > /config/server.key
 chmod 600 /config/server.key
-echo "$(date -Iseconds) TLS credentials fetched"
+echo "$(date -Iseconds) TLS credentials written"
 EOF
 
   tls_script = (
@@ -80,17 +80,20 @@ EOF
     }
   ] : []
 
-  # TLS environment variables for init container
-  tls_env_vars = var.tls_mode == "secrets_manager" ? [
+  # TLS secrets injected into the init container by ECS (secrets_manager mode)
+  tls_secrets = var.tls_mode == "secrets_manager" ? [
     {
-      name  = "TLS_CERTIFICATE_SECRET_ARN"
-      value = var.tls_certificate_secret_arn
+      name      = "TLS_CERTIFICATE"
+      valueFrom = var.tls_certificate_secret_arn
     },
     {
-      name  = "TLS_PRIVATE_KEY_SECRET_ARN"
-      value = var.tls_private_key_secret_arn
+      name      = "TLS_PRIVATE_KEY"
+      valueFrom = var.tls_private_key_secret_arn
     }
   ] : []
+
+  # openssl is only needed to generate a self-signed certificate on boot
+  init_packages_install = var.tls_mode == "self_signed" ? "apk add --no-cache openssl > /dev/null 2>&1" : ""
 
   # ADOT sidecar container definition (for CloudWatch metrics export)
   adot_container = var.create_resources && var.export_metrics_to_cloudwatch ? [{
@@ -152,113 +155,33 @@ resource "aws_ecs_task_definition" "pgdog" {
 
         command = [<<EOF
 set -eo pipefail
-apk add --no-cache curl jq openssl > /dev/null 2>&1
-
+${local.init_packages_install}
 mkdir -p /config
 
-# SigV4 signing function - returns secret value or exits with error
-sign_request() {
-  local secret_arn="$1"
-  local region="$AWS_REGION"
-  local service="secretsmanager"
-  local host="secretsmanager.$region.amazonaws.com"
-  local endpoint="https://$host"
-  local date_stamp=$(date -u +%Y%m%d)
-  local amz_date=$(date -u +%Y%m%dT%H%M%SZ)
+echo "$(date -Iseconds) Writing pgdog.toml..."
+printf '%s' "$PGDOG_CONFIG" > /config/pgdog.toml
 
-  # Get credentials from ECS metadata
-  local creds
-  creds=$(curl -sf "http://169.254.170.2$AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") || {
-    echo "ERROR: Failed to fetch ECS credentials" >&2
-    return 1
-  }
-  local access_key=$(echo "$creds" | jq -r '.AccessKeyId')
-  local secret_key=$(echo "$creds" | jq -r '.SecretAccessKey')
-  local token=$(echo "$creds" | jq -r '.Token')
-
-  if [ -z "$access_key" ] || [ "$access_key" = "null" ]; then
-    echo "ERROR: Failed to parse credentials" >&2
-    return 1
-  fi
-
-  # Request body
-  local body="{\"SecretId\":\"$secret_arn\"}"
-  local body_hash=$(printf '%s' "$body" | openssl dgst -sha256 | cut -d' ' -f2)
-
-  # Canonical request
-  local canonical_headers="content-type:application/x-amz-json-1.1\nhost:$host\nx-amz-date:$amz_date\nx-amz-security-token:$token\nx-amz-target:secretsmanager.GetSecretValue"
-  local signed_headers="content-type;host;x-amz-date;x-amz-security-token;x-amz-target"
-  local canonical_request="POST\n/\n\n$canonical_headers\n\n$signed_headers\n$body_hash"
-  local canonical_hash=$(printf "$canonical_request" | openssl dgst -sha256 | cut -d' ' -f2)
-
-  # String to sign
-  local algorithm="AWS4-HMAC-SHA256"
-  local scope="$date_stamp/$region/$service/aws4_request"
-  local string_to_sign="$algorithm\n$amz_date\n$scope\n$canonical_hash"
-
-  # Signing key
-  local k_date=$(printf "$date_stamp" | openssl dgst -sha256 -hmac "AWS4$secret_key" -binary)
-  local k_region=$(printf "$region" | openssl dgst -sha256 -mac HMAC -macopt hexkey:$(printf '%s' "$k_date" | xxd -p -c256) -binary)
-  local k_service=$(printf "$service" | openssl dgst -sha256 -mac HMAC -macopt hexkey:$(printf '%s' "$k_region" | xxd -p -c256) -binary)
-  local k_signing=$(printf "aws4_request" | openssl dgst -sha256 -mac HMAC -macopt hexkey:$(printf '%s' "$k_service" | xxd -p -c256) -binary)
-  local signature=$(printf "$string_to_sign" | openssl dgst -sha256 -mac HMAC -macopt hexkey:$(printf '%s' "$k_signing" | xxd -p -c256) | cut -d' ' -f2)
-
-  # Authorization header
-  local auth_header="$algorithm Credential=$access_key/$scope, SignedHeaders=$signed_headers, Signature=$signature"
-
-  # Make request and parse response
-  local response
-  response=$(curl -sf "$endpoint" \
-    -H "Content-Type: application/x-amz-json-1.1" \
-    -H "X-Amz-Date: $amz_date" \
-    -H "X-Amz-Security-Token: $token" \
-    -H "X-Amz-Target: secretsmanager.GetSecretValue" \
-    -H "Authorization: $auth_header" \
-    -d "$body") || {
-    echo "ERROR: Secrets Manager request failed for $secret_arn" >&2
-    return 1
-  }
-
-  # Check for API error
-  local error_type=$(echo "$response" | jq -r '.__type // empty')
-  if [ -n "$error_type" ]; then
-    local error_msg=$(echo "$response" | jq -r '.Message // .message // "Unknown error"')
-    echo "ERROR: $error_type - $error_msg" >&2
-    return 1
-  fi
-
-  # Extract secret value
-  local secret_value=$(echo "$response" | jq -r '.SecretString // empty')
-  if [ -z "$secret_value" ]; then
-    echo "ERROR: Empty secret value for $secret_arn" >&2
-    return 1
-  fi
-
-  echo "$secret_value"
-}
-
-echo "$(date -Iseconds) Starting config fetch..."
-
-echo "$(date -Iseconds) Fetching pgdog.toml..."
-sign_request "$PGDOG_CONFIG_SECRET_ARN" > /config/pgdog.toml
-
-echo "$(date -Iseconds) Fetching users.toml..."
-sign_request "$USERS_CONFIG_SECRET_ARN" > /config/users.toml
+echo "$(date -Iseconds) Writing users.toml..."
+printf '%s' "$USERS_CONFIG" > /config/users.toml
 ${local.tls_script}${local.ca_cert_script}
 echo "$(date -Iseconds) Done!"
 EOF
         ]
 
-        environment = concat([
+        # Config (and TLS) secrets are injected natively by ECS from Secrets
+        # Manager - no in-container AWS API calls or SigV4 signing required.
+        secrets = concat([
           {
-            name  = "PGDOG_CONFIG_SECRET_ARN"
-            value = aws_secretsmanager_secret.pgdog_config[0].arn
+            name      = "PGDOG_CONFIG"
+            valueFrom = aws_secretsmanager_secret.pgdog_config[0].arn
           },
           {
-            name  = "USERS_CONFIG_SECRET_ARN"
-            value = aws_secretsmanager_secret.users_config[0].arn
+            name      = "USERS_CONFIG"
+            valueFrom = aws_secretsmanager_secret.users_config[0].arn
           }
-        ], local.tls_env_vars, local.ca_cert_env_vars)
+        ], local.tls_secrets)
+
+        environment = local.ca_cert_env_vars
 
         mountPoints = [
           {
@@ -419,7 +342,8 @@ resource "aws_ecs_service" "pgdog" {
   depends_on = [
     aws_lb_listener.pgdog[0],
     aws_cloudwatch_log_group.pgdog[0],
-    aws_iam_role_policy.task_execution_logs[0]
+    aws_iam_role_policy.task_execution_logs[0],
+    aws_iam_role_policy.task_secrets[0]
   ]
 
   tags = var.tags

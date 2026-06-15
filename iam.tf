@@ -100,7 +100,7 @@ resource "aws_iam_role_policy" "task_secrets" {
   count = var.create_resources ? 1 : 0
 
   name = "${var.name}-pgdog-secrets"
-  role = aws_iam_role.task[0].id
+  role = aws_iam_role.task_execution[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
