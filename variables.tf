@@ -143,6 +143,10 @@ variable "pgdog" {
       load_balancing_strategy = optional(string, "random")
       read_write_split        = optional(string, "include_primary")
 
+      # Replica banning (replication-lag based). Disabled when unset.
+      ban_replica_lag       = optional(number)
+      ban_replica_lag_bytes = optional(number)
+
       # Health checks
       healthcheck_interval      = optional(number, 30000)
       idle_healthcheck_interval = optional(number, 30000)

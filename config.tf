@@ -196,6 +196,8 @@ EOT
     "pooler_mode = \"${local.g.pooler_mode}\"",
     "load_balancing_strategy = \"${local.g.load_balancing_strategy}\"",
     "read_write_split = \"${local.g.read_write_split}\"",
+    local.g.ban_replica_lag != null ? "ban_replica_lag = ${local.g.ban_replica_lag}" : "",
+    local.g.ban_replica_lag_bytes != null ? "ban_replica_lag_bytes = ${local.g.ban_replica_lag_bytes}" : "",
     "healthcheck_interval = ${local.g.healthcheck_interval}",
     "idle_healthcheck_interval = ${local.g.idle_healthcheck_interval}",
     "idle_healthcheck_delay = ${local.g.idle_healthcheck_delay}",
