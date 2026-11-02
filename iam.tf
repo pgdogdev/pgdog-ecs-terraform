@@ -110,12 +110,14 @@ resource "aws_iam_role_policy" "task_secrets" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = compact([
-          aws_secretsmanager_secret.pgdog_config[0].arn,
-          aws_secretsmanager_secret.users_config[0].arn,
-          var.tls_mode == "secrets_manager" ? var.tls_certificate_secret_arn : "",
-          var.tls_mode == "secrets_manager" ? var.tls_private_key_secret_arn : "",
-        ])
+        Resource = distinct(concat(
+          [aws_secretsmanager_secret.pgdog_config[0].arn],
+          local.all_password_secret_arns,
+          compact([
+            var.tls_mode == "secrets_manager" ? var.tls_certificate_secret_arn : "",
+            var.tls_mode == "secrets_manager" ? var.tls_private_key_secret_arn : "",
+          ])
+        ))
       }
     ]
   })

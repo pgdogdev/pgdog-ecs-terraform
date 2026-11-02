@@ -77,11 +77,16 @@ module "pgdog" {
 # ------------------------------------------------------------------------------
 
 output "pgdog_toml" {
-  value = module.pgdog.pgdog_toml
+  value     = module.pgdog.pgdog_toml
+  sensitive = true
 }
 
 output "users_toml" {
   value = module.pgdog.users_toml
+}
+
+output "users_init_script" {
+  value = module.pgdog.users_init_script
 }
 
 output "test_name" {

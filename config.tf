@@ -264,54 +264,69 @@ EOT
     local.control_toml,
   ]))
 
-  # Generate users.toml content with actual passwords from Secrets Manager.
-  # When no users are configured (e.g. passthrough_auth), emit a comment instead
-  # of an empty string: Secrets Manager rejects an empty secret_string.
-  users_toml = length(var.users) == 0 ? "# No users configured" : join("\n", [
+  # users.toml is rendered by the init container at task start. ECS injects each
+  # password from Secrets Manager as USER_PASSWORD_<i> / USER_SERVER_PASSWORD_<i>,
+  # so passwords never enter Terraform state and a rotated secret is picked up on
+  # the next task start (force a new deployment after rotation).
+  # Everything except passwords comes from this static block.
+  users_static_toml = [
     for user in var.users : join("\n", compact([
       "[[users]]",
       "name = \"${user.name}\"",
       "database = \"${user.database}\"",
-      "password = \"${data.aws_secretsmanager_secret_version.user_passwords[user.name].secret_string}\"",
       user.pool_size != null ? "pool_size = ${user.pool_size}" : "",
       user.pooler_mode != null ? "pooler_mode = \"${user.pooler_mode}\"" : "",
       user.read_only == true ? "read_only = true" : "",
       user.server_user != null ? "server_user = \"${user.server_user}\"" : "",
-      user.server_password_secret_arn != null ? "server_password = \"${data.aws_secretsmanager_secret_version.server_passwords[user.name].secret_string}\"" : "",
-      "",
     ]))
-  ])
+  ]
+
+  # Escape \ and " so a password is a valid TOML basic string.
+  # Passwords must be single-line.
+  users_script_header = <<-EOF
+toml_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+: > /config/users.toml
+EOF
+
+  # With no users (e.g. passthrough_auth) write a comment so users.toml is not empty.
+  users_script = length(var.users) == 0 ? "printf '%s\\n' '# No users configured' > /config/users.toml" : join("\n", concat(
+    [chomp(local.users_script_header)],
+    [
+      for i, user in var.users : join("\n", compact([
+        "cat >> /config/users.toml <<'USER_TOML'",
+        local.users_static_toml[i],
+        "USER_TOML",
+        "printf 'password = \"%s\"\\n' \"$(toml_escape \"$USER_PASSWORD_${i}\")\" >> /config/users.toml",
+        user.server_password_secret_arn != null ? "printf 'server_password = \"%s\"\\n' \"$(toml_escape \"$USER_SERVER_PASSWORD_${i}\")\" >> /config/users.toml" : "",
+        "printf '\\n' >> /config/users.toml",
+      ]))
+    ]
+  ))
+
+  # ECS-injected password secrets for the init container.
+  users_secrets = concat(
+    [for i, user in var.users : {
+      name      = "USER_PASSWORD_${i}"
+      valueFrom = user.password_secret_arn
+    }],
+    [for i, user in var.users : {
+      name      = "USER_SERVER_PASSWORD_${i}"
+      valueFrom = user.server_password_secret_arn
+    } if user.server_password_secret_arn != null]
+  )
 
   # Config hash for triggering rolling deployments when config changes
-  config_hash = sha256("${local.pgdog_toml}${local.users_toml}")
+  config_hash = sha256("${local.pgdog_toml}${local.users_script}")
 
   # For validation output, mask passwords
   users_toml_masked = length(var.users) == 0 ? "# No users configured" : join("\n", [
-    for user in var.users : join("\n", compact([
-      "[[users]]",
-      "name = \"${user.name}\"",
-      "database = \"${user.database}\"",
+    for i, user in var.users : join("\n", compact([
+      local.users_static_toml[i],
       "password = \"REDACTED\"",
-      user.pool_size != null ? "pool_size = ${user.pool_size}" : "",
-      user.pooler_mode != null ? "pooler_mode = \"${user.pooler_mode}\"" : "",
-      user.read_only == true ? "read_only = true" : "",
-      user.server_user != null ? "server_user = \"${user.server_user}\"" : "",
       user.server_password_secret_arn != null ? "server_password = \"REDACTED\"" : "",
       "",
     ]))
   ])
-}
-
-# Fetch user passwords from Secrets Manager
-data "aws_secretsmanager_secret_version" "user_passwords" {
-  for_each  = var.create_resources ? { for user in var.users : user.name => user.password_secret_arn } : {}
-  secret_id = each.value
-}
-
-# Fetch server passwords from Secrets Manager (if specified)
-data "aws_secretsmanager_secret_version" "server_passwords" {
-  for_each  = var.create_resources ? { for user in var.users : user.name => user.server_password_secret_arn if user.server_password_secret_arn != null } : {}
-  secret_id = each.value
 }
 
 # ------------------------------------------------------------------------------
