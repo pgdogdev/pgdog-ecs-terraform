@@ -94,7 +94,7 @@ Failure to do either will produce confusing errors at task creation, since it wo
 | Network load balancer | Your application will connect to the load balancer. |
 | Security group | For controlling ingress to ECS tasks. |
 | IAM Roles | Automatically configured task execution and task runtime roles. |
-| Secrets Manager Secrets | Storing `pgdog.toml` and `users.toml` configuration files. |
+| Secrets Manager Secret | Stores `pgdog.toml`. User passwords stay in your own secrets; ECS injects them into the init container, which renders `users.toml` at task start. |
 | CloudWatch Log Group | PgDog container logs. |
 | Autoscaling | Target and policies (CPU/memory-based). |
 
@@ -166,11 +166,13 @@ aurora_clusters = [
 | `users` | PgDog users configuration | `list(object)` | - | yes |
 | `users[].name` | Username for client authentication | `string` | - | yes |
 | `users[].database` | Database name this user can connect to | `string` | - | yes |
-| `users[].password_secret_arn` | ARN of Secrets Manager secret containing the password | `string` | - | yes |
+| `users[].password_secret_arn` | Full ARN (with the random suffix) of a Secrets Manager secret holding the password as a plain, single-line string. Read by ECS at task start, never stored in Terraform state. | `string` | - | yes |
 | `users[].server_user` | Username for connecting to the backend database (if different) | `string` | `null` | no |
-| `users[].server_password_secret_arn` | ARN of secret for backend database password (if different) | `string` | `null` | no |
+| `users[].server_password_secret_arn` | Full ARN of the secret for the backend database password (if different). Same rules as `password_secret_arn`. | `string` | `null` | no |
 | `users[].pool_size` | Connection pool size for this user | `number` | `10` | no |
 | `users[].pooler_mode` | Pooler mode (transaction/session/statement) | `string` | `transaction` | no |
+
+Passwords are read when a task starts. After you rotate a secret, run `aws ecs update-service --force-new-deployment` to roll the tasks. The same user name can appear for more than one database.
 
 ```hcl
 users = [

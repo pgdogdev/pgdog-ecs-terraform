@@ -3,13 +3,19 @@
 # ------------------------------------------------------------------------------
 
 output "pgdog_toml" {
-  description = "Generated pgdog.toml content for validation with 'pgdog checkconfig'"
+  description = "Generated pgdog.toml content for validation with 'pgdog checkconfig'. Sensitive: it can contain the admin password and control token. Read with 'terraform output -raw pgdog_toml'."
   value       = local.pgdog_toml
+  sensitive   = true
 }
 
 output "users_toml" {
   description = "Generated users.toml content (passwords redacted) for validation"
   value       = local.users_toml_masked
+}
+
+output "users_init_script" {
+  description = "Shell snippet the init container runs to render users.toml from ECS-injected USER_PASSWORD_<i> variables. Contains no secret values."
+  value       = local.users_script
 }
 
 output "configured_databases" {

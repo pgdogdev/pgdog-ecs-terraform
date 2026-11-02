@@ -95,6 +95,8 @@ EOF
   # openssl is only needed to generate a self-signed certificate on boot
   init_packages_install = var.tls_mode == "self_signed" ? "apk add --no-cache openssl > /dev/null 2>&1" : ""
 
+  pgdog_stop_timeout = min(120, ceil(local.pgdog_general.shutdown_timeout / 1000) + 10)
+
   # ADOT sidecar container definition (for CloudWatch metrics export)
   adot_container = var.create_resources && var.export_metrics_to_cloudwatch ? [{
     name      = "adot-collector"
@@ -162,7 +164,7 @@ echo "$(date -Iseconds) Writing pgdog.toml..."
 printf '%s' "$PGDOG_CONFIG" > /config/pgdog.toml
 
 echo "$(date -Iseconds) Writing users.toml..."
-printf '%s' "$USERS_CONFIG" > /config/users.toml
+${local.users_script}
 ${local.tls_script}${local.ca_cert_script}
 echo "$(date -Iseconds) Done!"
 EOF
@@ -174,12 +176,8 @@ EOF
           {
             name      = "PGDOG_CONFIG"
             valueFrom = aws_secretsmanager_secret.pgdog_config[0].arn
-          },
-          {
-            name      = "USERS_CONFIG"
-            valueFrom = aws_secretsmanager_secret.users_config[0].arn
           }
-        ], local.tls_secrets)
+        ], local.users_secrets, local.tls_secrets)
 
         environment = local.ca_cert_env_vars
 
@@ -206,6 +204,10 @@ EOF
         name      = "pgdog"
         image     = local.pgdog_image
         essential = true
+
+        # ECS sends SIGKILL after stopTimeout (default 30 s). Give PgDog its full
+        # shutdown_timeout to drain clients, plus 10 s margin. Fargate max is 120 s.
+        stopTimeout = local.pgdog_stop_timeout
 
         dependsOn = [
           {

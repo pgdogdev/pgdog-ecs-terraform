@@ -162,14 +162,17 @@ variable "pgdog" {
       shutdown_timeout             = optional(number, 60000)
       shutdown_termination_timeout = optional(number)
       query_timeout                = optional(number)
-      connect_timeout              = optional(number, 300)
-      connect_attempts             = optional(number, 1)
-      connect_attempt_delay        = optional(number, 0)
-      checkout_timeout             = optional(number, 300)
-      idle_timeout                 = optional(number, 60000)
-      client_idle_timeout          = optional(number)
-      client_login_timeout         = optional(number, 60000)
-      server_lifetime              = optional(number, 86400000)
+      # Milliseconds. Defaults match the PgDog docs (5 s):
+      # https://docs.pgdog.dev/configuration/pgdog.toml/general/#connect_timeout
+      connect_timeout       = optional(number, 5000)
+      connect_attempts      = optional(number, 1)
+      connect_attempt_delay = optional(number, 0)
+      # https://docs.pgdog.dev/configuration/pgdog.toml/general/#checkout_timeout
+      checkout_timeout     = optional(number, 5000)
+      idle_timeout         = optional(number, 60000)
+      client_idle_timeout  = optional(number)
+      client_login_timeout = optional(number, 60000)
+      server_lifetime      = optional(number, 86400000)
 
       # Authentication
       auth_type        = optional(string, "scram")
