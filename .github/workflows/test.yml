@@ -15,51 +15,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Checkout pgdog
-        uses: actions/checkout@v4
-        with:
-          repository: pgdogdev/pgdog
-          path: pgdog-source
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
 
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+      - name: Pull PgDog enterprise image
+        run: docker pull ghcr.io/pgdogdev/pgdog-enterprise:main-ent
 
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            pgdog-source/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('pgdog-source/**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Install CMake 3.31
+      - name: Add pgdog container wrapper to PATH
         run: |
-          sudo apt update && sudo apt install mold -y
-          sudo apt remove cmake
-          sudo pip3 install cmake==3.31.6
-
-      - name: Build pgdog
-        run: cargo build --bin pgdog
-        working-directory: pgdog-source
-        env:
-          # crates.io downloads occasionally drop mid-transfer (curl error 56);
-          # cargo's default of 3 retries isn't always enough.
-          CARGO_NET_RETRY: 10
-
-      - name: Add pgdog to PATH
-        run: echo "${{ github.workspace }}/pgdog-source/target/debug" >> $GITHUB_PATH
+          mkdir -p "$RUNNER_TEMP/bin"
+          cat > "$RUNNER_TEMP/bin/pgdog" <<'EOF'
+          #!/bin/bash
+          exec docker run --rm \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" \
+            --workdir "$PWD" \
+            --entrypoint pgdog \
+            ghcr.io/pgdogdev/pgdog-enterprise:main-ent "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/bin/pgdog"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Terraform fmt check
         run: terraform fmt -check -recursive
